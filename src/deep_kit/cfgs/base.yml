@@ -56,8 +56,8 @@ exp:
         no_val_before_epoch: 0
         n_repeat: 1
         save_every_model: False
-        save_every_better_model: False
-        save_latest_model: False
+        save_every_better_model: True
+        save_latest_model: True
 
     test:
         batch_size: 10
@@ -65,7 +65,7 @@ exp:
         n_repeat: 1
 
 model:
-    name: ???
+    name: continual_reg
 
 dataset:
-    name: ???
+    name: OASIS
