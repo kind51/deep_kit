@@ -333,6 +333,22 @@ class Trainer(Operator):
         return self.iter_total, self.epoch_total
 
     def train(self):
+         # === 新增验证步骤 ===
+        # 1. 检查工作目录和保存路径
+        print(f"当前工作目录: {os.getcwd()}")
+        print(f"模型将保存到: {os.path.abspath(self.path_checkpoints)}")
+
+        # 2. 测试路径可写性
+        test_path = os.path.join(self.path_checkpoints, "test_write.tmp")
+        try:
+            with open(test_path, 'w') as f:
+                f.write("test")
+            os.remove(test_path)
+            print("路径可写验证通过")
+        except Exception as e:
+            raise RuntimeError(f"路径 {test_path} 不可写！错误: {e}")
+        
+        
         self.logger_extra.warn(f'------ Training ------')
         self.model = self.model.to(self.device)
         if self.cfg.var.is_parallel:
@@ -486,6 +502,10 @@ class Trainer(Operator):
                     self.writer.add_scalar(f'{mode}/{name}', value, epoch)
 
             # save best model
+            if mode == 'val' and self.is_best:
+                save_path = os.path.join(self.path_checkpoints, 'model_best_val.pth')
+                print(f"尝试保存模型到: {save_path} (绝对路径: {os.path.abspath(save_path)})")
+                torch.save(self.model.state_dict(), save_path)
             if mode == 'val' and self.is_best:
                 if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
                     self.logger_checkpoints.warn(f'Saving best model on val set: {mark} {epoch}')
