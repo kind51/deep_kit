@@ -7,7 +7,6 @@ install()
 
 def train():
     from .experimenters.trainer import Trainer
-
     trainer = Trainer(cfg)
     trainer.train()
 

@@ -60,30 +60,6 @@ class Operator:
         self.device = torch.device(name_device)
 
     def _init_dirs(self):
-        # 确保 path_save 是绝对路径
-        self.cfg.exp.path_save = os.path.abspath(self.cfg.exp.path_save)
-        self.time_exp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self.name_exp = f'{self.cfg.exp.mode}_{self.cfg.exp.name}_{self.time_exp}'
-        self.path_exp = os.path.join(self.cfg.exp.path_save, self.name_exp)
-
-        # 仅主进程（Rank 0）创建目录
-        if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
-            os.makedirs(self.path_exp, exist_ok=True)
-            if self.cfg.exp.mode == 'train':
-                self.path_checkpoints = os.path.join(self.path_exp, 'checkpoints')
-                os.makedirs(self.path_checkpoints, exist_ok=True)
-                print(f"主进程创建目录: {self.path_checkpoints}")
-        dist.barrier()  # 其他进程等待主进程完成目录创建
-
-        # 打印调试信息
-        print(f"工作目录: {os.getcwd()}")
-        print(f"模型保存路径: {self.path_exp}")
-
-        if self.cfg.exp.mode == 'train':
-            self.path_checkpoints = os.path.join(self.path_exp, 'checkpoints')
-            os.makedirs(self.path_checkpoints, exist_ok=True)
-
-
         def check_substrings():
             if isinstance(self.cfg.exp.names_exp_delete, str):
                 names_exp_delete = [self.cfg.exp.names_exp_delete]
