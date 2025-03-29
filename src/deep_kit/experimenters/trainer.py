@@ -14,6 +14,8 @@ import torch.distributed as dist
 from .operator import Operator
 from ..utils import setup_logger, find_class
 
+#设置PyTorch内存管理环境变量
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class MyDistributedDataParallel(DistributedDataParallel):
     def __getattr__(self, name):
@@ -528,7 +530,7 @@ class Trainer(Operator):
 
     def test(self):
         self.model = self.model.to(self.device)
-
+        torch.cuda.empty_cache()
         # 动态获取最新模型路径（优先使用验证集最佳模型）
         try:
             model_path = self.find_latest_model(task_name="mersam", model_type="best_val")
