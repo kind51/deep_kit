@@ -404,7 +404,7 @@ class Trainer(Operator):
                 
                 if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
                     self.val(epoch, mode='val')
-                    
+                    #self.val(epoch, mode='test')
                 
                 if hasattr(self.model, 'end_task'):
                     self.model.end_task(self.train_loaders[task_idx])     
