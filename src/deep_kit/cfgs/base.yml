@@ -1,7 +1,7 @@
 exp:
     name: tmp
     names_exp_delete: null
-    path_save: "/content/Continual-Reg/save"
+    path_save: ./save
     idx_device: 0 # -1 for CPU
     rand_seed: null
     n_workers: 0
@@ -56,14 +56,12 @@ exp:
         no_val_before_epoch: 0
         n_repeat: 1
         save_every_model: False
-        save_every_better_model: True
-        save_latest_model: True
+        save_every_better_model: False
+        save_latest_model: False
 
     test:
         batch_size: 10
-        save_result:
-            enable: True  # 确保测试结果保存
-            path_model_trained: "/content/Continual-Reg/save/latest_model.pth"
+        path_model_trained: null
         n_repeat: 1
 
 model:
