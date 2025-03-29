@@ -529,17 +529,20 @@ class Trainer(Operator):
     def test(self):
         self.model = self.model.to(self.device)
 
-        if self.cfg.exp.test.path_model_trained is None:
-            # raise NotImplementedError('No model is loaded for test!')
-            print('Warning: no model is loaded')
-        else:
-            dict_state = torch.load(self.cfg.exp.test.path_model_trained, map_location=self.device)
+        # 动态获取最新模型路径（优先使用验证集最佳模型）
+        try:
+            model_path = self.find_latest_model(task_name="mersam", model_type="best_val")
+            print(f"Auto-selected model: {model_path}")
+        except FileNotFoundError:
+            # 回退到配置文件中的路径（如果存在）
+            model_path = self.cfg.exp.test.path_model_trained
+            if model_path is None:
+                raise FileNotFoundError("No model path specified or auto-found!")
 
-            for key in list(dict_state.keys()):
-                if key.startswith('module.'):
-                    dict_state[key[7:]] = dict_state.pop(key)
-            print(f'loading pretrained model for test from path {self.cfg.exp.test.path_model_trained}')
-            self.model.load_state_dict(dict_state, strict=True)
+        # 加载模型
+        state_dict = torch.load(model_path, map_location=self.device)
+        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}  # 处理多卡训练前缀
+        self.model.load_state_dict(state_dict, strict=True)
 
         if self.cfg.model.get('task_sequential', False):
             for task_idx in range(len(self.cfg.dataset.test_tasks)):

@@ -151,3 +151,20 @@ class Operator:
             del cfg_printed.var
             self.logger_extra.warn(Ocfg.to_yaml(cfg_printed))
             Ocfg.save(config=cfg_printed, f=os.path.join(self.path_log, 'configs.yml'))
+
+    def find_latest_model(self, task_name="mersam", model_type="best_val"):
+        """
+        动态查找最新训练的模型文件
+        :param task_name: 任务名（如 'mersam'）
+        :param model_type: 模型类型（'best_val'、'best_test'、'latest'）
+        :return: 模型文件的完整路径
+        """
+        pattern = os.path.join(
+            self.cfg.exp.path_save,  # 从配置中获取基础路径（如 './save'）
+            f"train_{task_name}_*/checkpoints/model_{model_type}*.pth"
+        )
+        matched_files = glob.glob(pattern)
+        if not matched_files:
+            raise FileNotFoundError(f"No model found for: {pattern}")
+        # 按修改时间排序，返回最新的文件
+        return sorted(matched_files, key=os.path.getmtime, reverse=True)[0]
