@@ -12,8 +12,8 @@ exp:
     train:
         path_model_trained: null
         epoch_start: 0
-        n_epochs: 1000
-        batch_size: 10
+        n_epochs: 100
+        batch_size: 4
         use_gradscaler: False
         save_best_model_on_test_set: False
         optimizer:
@@ -65,7 +65,7 @@ exp:
         n_repeat: 1
 
 model:
-    name: continual_reg
+    name: ???
 
 dataset:
-    name: OASIS
+    name: ???
