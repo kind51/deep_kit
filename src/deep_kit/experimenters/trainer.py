@@ -14,6 +14,8 @@ import torch.distributed as dist
 from .operator import Operator
 from ..utils import setup_logger, find_class
 
+#设置PyTorch内存管理环境变量
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class MyDistributedDataParallel(DistributedDataParallel):
     def __getattr__(self, name):
@@ -71,8 +73,7 @@ class Trainer(Operator):
                                    pin_memory=True,
                                    drop_last=True,
                                    sampler=self.sampler_trains[i]
-                                   if self.cfg.var.is_parallel and not issubclass(type(self.train_set),
-                                                                                  IterableDataset) else None,
+                                   if self.cfg.var.is_parallel and not issubclass(type(self.train_set), IterableDataset) else None,
                                    worker_init_fn=lambda x: np.random.seed(42 + x)
                                    )
                         for i in range(len(self.cfg.dataset.train_tasks))]
@@ -148,6 +149,7 @@ class Trainer(Operator):
                 )
 
     def _init_loggers(self):
+        # 重新初始化日志
         path_all = os.path.join(self.path_log, 'log_all.txt')
         path_train = os.path.join(self.path_log, 'log_train.txt')
         path_val = os.path.join(self.path_log, 'log_val.txt')
@@ -199,7 +201,7 @@ class Trainer(Operator):
                 scheduler = optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=cfg_sch.gamma)
             elif name_sch == 'lambdalr':
                 lambdas_lr = []
-                for where in cfg_sch.where:  # e.g., model.lambda_lr_0
+                for where in cfg_sch.where: # e.g., model.lambda_lr_0
                     attrs = where.split('.')
                     lambda_lr = self
                     for attr in attrs:
@@ -245,8 +247,7 @@ class Trainer(Operator):
                 self.sampler_train.set_epoch(self.epoch_total)
 
             if self.cfg.model.get('task_sequential', False):
-                print(
-                    f'----------- task-{self.task_idx} training epoch begins with {len(self.train_loaders[self.task_idx])} iterations -----------')
+                print(f'----------- task-{self.task_idx} training epoch begins with {len(self.train_loaders[self.task_idx])} iterations -----------')
             else:
                 print(f'----------- training epoch begins with {len(self.train_loader)} iterations -----------')
 
@@ -335,6 +336,22 @@ class Trainer(Operator):
         return self.iter_total, self.epoch_total
 
     def train(self):
+         # === 新增验证步骤 ===
+        # 1. 检查工作目录和保存路径
+        print(f"当前工作目录: {os.getcwd()}")
+        print(f"模型将保存到: {os.path.abspath(self.path_checkpoints)}")
+
+        # 2. 测试路径可写性
+        test_path = os.path.join(self.path_checkpoints, "test_write.tmp")
+        try:
+            with open(test_path, 'w') as f:
+                f.write("test")
+            os.remove(test_path)
+            print("路径可写验证通过")
+        except Exception as e:
+            raise RuntimeError(f"路径 {test_path} 不可写！错误: {e}")
+
+
         self.logger_extra.warn(f'------ Training ------')
         self.model = self.model.to(self.device)
         if self.cfg.var.is_parallel:
@@ -347,8 +364,7 @@ class Trainer(Operator):
         if self.cfg.model.get('task_sequential', False):
             pass
         else:
-            self.optimizer, self.scheduler = self._get_optimizer(
-                getattr(self.model, 'get_params', self.model.parameters)())
+            self.optimizer, self.scheduler = self._get_optimizer(getattr(self.model, 'get_params', self.model.parameters)())
 
         if self.cfg.exp.train.path_model_trained is not None:
             if self.cfg.var.is_parallel:
@@ -391,7 +407,7 @@ class Trainer(Operator):
 
                 if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
                     self.val(epoch, mode='val')
-                    self.val(epoch, mode='test')
+                    #self.val(epoch, mode='test')
 
                 if hasattr(self.model, 'end_task'):
                     self.model.end_task(self.train_loaders[task_idx])
@@ -432,8 +448,7 @@ class Trainer(Operator):
             for i_repeat in range(self.cfg.exp[mode].n_repeat):
                 self.model.before_epoch(mode, i_repeat)
                 if self.cfg.model.get('task_sequential', False):
-                    print(
-                        f'----------- task-{self.task_idx} {mode} epoch begins with {len(data_loader)} iterations -----------')
+                    print(f'----------- task-{self.task_idx} {mode} epoch begins with {len(data_loader)} iterations -----------')
                 else:
                     print(f'----------- {mode} epoch begins with {len(data_loader)} iterations -----------')
 
@@ -491,44 +506,46 @@ class Trainer(Operator):
 
             # save best model
             if mode == 'val' and self.is_best:
+                save_path = os.path.join(self.path_checkpoints, 'model_best_val.pth')
+                print(f"尝试保存模型到: {save_path} (绝对路径: {os.path.abspath(save_path)})")
+                torch.save(self.model.state_dict(), save_path)
+            if mode == 'val' and self.is_best:
                 if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
                     self.logger_checkpoints.warn(f'Saving best model on val set: {mark} {epoch}')
-                    torch.save(self.model.state_dict(),
-                               os.path.join(self.path_checkpoints, f'model_best_val{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_best_val{task_suffix}.pth'))
             if mode == 'test' and self.is_best_test and self.cfg.exp.train.save_best_model_on_test_set:
                 if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
                     self.logger_checkpoints.warn(f'Saving best model on test set: {mark} {epoch}')
-                    torch.save(self.model.state_dict(),
-                               os.path.join(self.path_checkpoints, f'model_best_test{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_best_test{task_suffix}.pth'))
 
             if mode == 'val':
                 if getattr(self.cfg.exp.val, 'save_every_model', False):
                     self.logger_checkpoints.warn(f'Saving current model: {mark} {epoch}')
-                    torch.save(self.model.state_dict(),
-                               os.path.join(self.path_checkpoints, f'model_{mark}{epoch}{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_{mark}{epoch}{task_suffix}.pth'))
                 elif self.is_best and getattr(self.cfg.exp.val, 'save_every_better_model', False):
                     self.logger_checkpoints.warn(f'Saving current model: {mark} {epoch}')
-                    torch.save(self.model.state_dict(),
-                               os.path.join(self.path_checkpoints, f'model_{mark}{epoch}{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_{mark}{epoch}{task_suffix}.pth'))
                 if self.cfg.exp.val.save_latest_model:
                     self.logger_checkpoints.warn(f'Saving latest model: {mark} {epoch}')
-                    torch.save(self.model.state_dict(),
-                               os.path.join(self.path_checkpoints, f'model_latest{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_latest{task_suffix}.pth'))
 
     def test(self):
         self.model = self.model.to(self.device)
+        torch.cuda.empty_cache()
+        # 动态获取最新模型路径（优先使用验证集最佳模型）
+        try:
+            model_path = self.find_latest_model(task_name="mersam", model_type="best_val")
+            print(f"Auto-selected model: {model_path}")
+        except FileNotFoundError:
+            # 回退到配置文件中的路径（如果存在）
+            model_path = self.cfg.exp.test.path_model_trained
+            if model_path is None:
+                raise FileNotFoundError("No model path specified or auto-found!")
 
-        if self.cfg.exp.test.path_model_trained is None:
-            # raise NotImplementedError('No model is loaded for test!')
-            print('Warning: no model is loaded')
-        else:
-            dict_state = torch.load(self.cfg.exp.test.path_model_trained, map_location=self.device)
-
-            for key in list(dict_state.keys()):
-                if key.startswith('module.'):
-                    dict_state[key[7:]] = dict_state.pop(key)
-            print(f'loading pretrained model for test from path {self.cfg.exp.test.path_model_trained}')
-            self.model.load_state_dict(dict_state, strict=True)
+        # 加载模型
+        state_dict = torch.load(model_path, map_location=self.device)
+        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}  # 处理多卡训练前缀
+        self.model.load_state_dict(state_dict, strict=True)
 
         if self.cfg.model.get('task_sequential', False):
             for task_idx in range(len(self.cfg.dataset.test_tasks)):
