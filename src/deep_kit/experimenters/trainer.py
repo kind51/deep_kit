@@ -149,12 +149,6 @@ class Trainer(Operator):
                 )
 
     def _init_loggers(self):
-        # 清除现有处理器（防止重复）
-        for logger_name in ['extra', 'train', 'val', 'checkpoints']:
-            logger = logging.getLogger(logger_name)
-            for handler in logger.handlers[:]:
-                logger.removeHandler(handler)
-
         # 重新初始化日志
         path_all = os.path.join(self.path_log, 'log_all.txt')
         path_train = os.path.join(self.path_log, 'log_train.txt')
