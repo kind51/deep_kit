@@ -14,8 +14,6 @@ import torch.distributed as dist
 from .operator import Operator
 from ..utils import setup_logger, find_class
 
-#设置PyTorch内存管理环境变量
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 class MyDistributedDataParallel(DistributedDataParallel):
     def __getattr__(self, name):
@@ -53,9 +51,9 @@ class Trainer(Operator):
                 self.val_set, self.val_loader = cls_dataset(mode='val', cfg=self.cfg)
             else:
                 if self.cfg.model.get('task_sequential', False):
-                    self.train_sets = [cls_dataset(mode='train', cfg=self.cfg, task=task) 
+                    self.train_sets = [cls_dataset(mode='train', cfg=self.cfg, task=task)
                                        for task in self.cfg.dataset.train_tasks]
-                    self.val_sets = [cls_dataset(mode='val', cfg=self.cfg, task=task) 
+                    self.val_sets = [cls_dataset(mode='val', cfg=self.cfg, task=task)
                                      for task in self.cfg.dataset.train_tasks]
 
                     if self.cfg.var.is_parallel:
@@ -63,7 +61,7 @@ class Trainer(Operator):
                         shuffle_train = False
                     else:
                         shuffle_train = not issubclass(type(self.train_sets[0]), IterableDataset)
-                    
+
                     self.train_loaders = [
                         DataLoader(dataset=self.train_sets[i],
                                    batch_size=self.cfg.exp.train.batch_size,
@@ -73,7 +71,8 @@ class Trainer(Operator):
                                    pin_memory=True,
                                    drop_last=True,
                                    sampler=self.sampler_trains[i]
-                                   if self.cfg.var.is_parallel and not issubclass(type(self.train_set), IterableDataset) else None,
+                                   if self.cfg.var.is_parallel and not issubclass(type(self.train_set),
+                                                                                  IterableDataset) else None,
                                    worker_init_fn=lambda x: np.random.seed(42 + x)
                                    )
                         for i in range(len(self.cfg.dataset.train_tasks))]
@@ -87,7 +86,7 @@ class Trainer(Operator):
                                    worker_init_fn=lambda x: np.random.seed(42 + x)
                                    )
                         for i in range(len(self.cfg.dataset.train_tasks))]
-                    
+
                 else:
                     self.train_set = cls_dataset(mode='train', cfg=self.cfg)
                     self.val_set = cls_dataset(mode='val', cfg=self.cfg)
@@ -149,7 +148,6 @@ class Trainer(Operator):
                 )
 
     def _init_loggers(self):
-        # 重新初始化日志
         path_all = os.path.join(self.path_log, 'log_all.txt')
         path_train = os.path.join(self.path_log, 'log_train.txt')
         path_val = os.path.join(self.path_log, 'log_val.txt')
@@ -201,7 +199,7 @@ class Trainer(Operator):
                 scheduler = optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=cfg_sch.gamma)
             elif name_sch == 'lambdalr':
                 lambdas_lr = []
-                for where in cfg_sch.where: # e.g., model.lambda_lr_0
+                for where in cfg_sch.where:  # e.g., model.lambda_lr_0
                     attrs = where.split('.')
                     lambda_lr = self
                     for attr in attrs:
@@ -214,7 +212,7 @@ class Trainer(Operator):
             scheduler = None
 
         return optimizer, scheduler
-    
+
     def _train_epochs(self):
 
         for epoch in range(self.epoch_start, self.epoch_end):
@@ -245,9 +243,10 @@ class Trainer(Operator):
             if self.cfg.var.is_parallel:
                 # see WARNING in https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler
                 self.sampler_train.set_epoch(self.epoch_total)
-                
+
             if self.cfg.model.get('task_sequential', False):
-                print(f'----------- task-{self.task_idx} training epoch begins with {len(self.train_loaders[self.task_idx])} iterations -----------')
+                print(
+                    f'----------- task-{self.task_idx} training epoch begins with {len(self.train_loaders[self.task_idx])} iterations -----------')
             else:
                 print(f'----------- training epoch begins with {len(self.train_loader)} iterations -----------')
 
@@ -261,7 +260,7 @@ class Trainer(Operator):
                     obj_to_enumerate = self.train_loaders[self.task_idx]
                 else:
                     obj_to_enumerate = self.train_loader
-                
+
             for _, data in enumerate(obj_to_enumerate):
                 self.iter_total += 1
 
@@ -278,7 +277,7 @@ class Trainer(Operator):
                         else:
                             input, ground_truth = data
                             data = input.to(self.device), ground_truth.to(self.device)
-                
+
                 if self.cfg.model.get('task_sequential', False):
                     output = self.model.observe(data)
                     metrics = self.model.metrics
@@ -302,7 +301,7 @@ class Trainer(Operator):
                 for name, value in metrics.items():
                     if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
                         self.writer.add_scalar(f'train/{name}', value, self.iter_total)
-                
+
                 # validation
                 if 'n_iters_once' in self.cfg.exp.val:
                     if self.iter_total % self.cfg.exp.val.n_iters_once == 0:
@@ -332,26 +331,10 @@ class Trainer(Operator):
             info_logged = ', '.join(result_log)
             self.logger_extra.warn(f'[train] {info_logged}')
             self.logger_train.info(info_logged)
-            
+
         return self.iter_total, self.epoch_total
 
     def train(self):
-         # === 新增验证步骤 ===
-        # 1. 检查工作目录和保存路径
-        print(f"当前工作目录: {os.getcwd()}")
-        print(f"模型将保存到: {os.path.abspath(self.path_checkpoints)}")
-
-        # 2. 测试路径可写性
-        test_path = os.path.join(self.path_checkpoints, "test_write.tmp")
-        try:
-            with open(test_path, 'w') as f:
-                f.write("test")
-            os.remove(test_path)
-            print("路径可写验证通过")
-        except Exception as e:
-            raise RuntimeError(f"路径 {test_path} 不可写！错误: {e}")
-        
-        
         self.logger_extra.warn(f'------ Training ------')
         self.model = self.model.to(self.device)
         if self.cfg.var.is_parallel:
@@ -364,7 +347,8 @@ class Trainer(Operator):
         if self.cfg.model.get('task_sequential', False):
             pass
         else:
-            self.optimizer, self.scheduler = self._get_optimizer(getattr(self.model, 'get_params', self.model.parameters)())
+            self.optimizer, self.scheduler = self._get_optimizer(
+                getattr(self.model, 'get_params', self.model.parameters)())
 
         if self.cfg.exp.train.path_model_trained is not None:
             if self.cfg.var.is_parallel:
@@ -376,7 +360,7 @@ class Trainer(Operator):
             print(f'loading pretrained model for training from path {self.cfg.exp.train.path_model_trained}')
             self.model.load_state_dict(torch.load(self.cfg.exp.train.path_model_trained, map_location=map_location),
                                        strict=True)
-       
+
         if hasattr(self.model, 'before_train'):
             self.model.before_train()
 
@@ -399,27 +383,27 @@ class Trainer(Operator):
                 self.score_best = -math.inf
                 self.score_best_test = -math.inf
                 self.is_best = True
-                
+
                 if hasattr(self.model, 'begin_task'):
                     self.model.begin_task(self.train_loaders[task_idx])
-                
+
                 _, epoch = self._train_epochs()
-                
+
                 if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
                     self.val(epoch, mode='val')
-                    #self.val(epoch, mode='test')
-                
+                    self.val(epoch, mode='test')
+
                 if hasattr(self.model, 'end_task'):
-                    self.model.end_task(self.train_loaders[task_idx])     
-                
-        else:   
+                    self.model.end_task(self.train_loaders[task_idx])
+
+        else:
             self.epoch_start = self.cfg.exp.train.epoch_start
             self.epoch_end = self.epoch_start + self.cfg.exp.train.n_epochs
             self.score_best = -math.inf
             self.score_best_test = -math.inf
             self.is_best = True
             self._train_epochs()
-            
+
         self.logger_train.warn(f'------ Training finished ------')
 
         if hasattr(self.model, 'after_train'):
@@ -438,7 +422,7 @@ class Trainer(Operator):
         else:
             data_loader = getattr(self, f'{mode}_loader')
             dataset = getattr(self, f'{mode}_set')
-            
+
         mark = 'iter' if val_iter else 'epoch'
         task_suffix = f'_task{self.task_idx}' if self.cfg.model.get('task_sequential', False) else ''
 
@@ -448,15 +432,16 @@ class Trainer(Operator):
             for i_repeat in range(self.cfg.exp[mode].n_repeat):
                 self.model.before_epoch(mode, i_repeat)
                 if self.cfg.model.get('task_sequential', False):
-                    print(f'----------- task-{self.task_idx} {mode} epoch begins with {len(data_loader)} iterations -----------')
+                    print(
+                        f'----------- task-{self.task_idx} {mode} epoch begins with {len(data_loader)} iterations -----------')
                 else:
                     print(f'----------- {mode} epoch begins with {len(data_loader)} iterations -----------')
-                    
+
                 if val_iter:
                     obj_to_enumerate = data_loader
                 else:
                     obj_to_enumerate = track(data_loader, transient=True, description=mode)
-                    
+
                 for _, data in enumerate(obj_to_enumerate):
                     if not self.cfg.exp.customize_dataloader:
                         if hasattr(dataset, 'to_device'):
@@ -506,46 +491,44 @@ class Trainer(Operator):
 
             # save best model
             if mode == 'val' and self.is_best:
-                save_path = os.path.join(self.path_checkpoints, 'model_best_val.pth')
-                print(f"尝试保存模型到: {save_path} (绝对路径: {os.path.abspath(save_path)})")
-                torch.save(self.model.state_dict(), save_path)
-            if mode == 'val' and self.is_best:
                 if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
                     self.logger_checkpoints.warn(f'Saving best model on val set: {mark} {epoch}')
-                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_best_val{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(),
+                               os.path.join(self.path_checkpoints, f'model_best_val{task_suffix}.pth'))
             if mode == 'test' and self.is_best_test and self.cfg.exp.train.save_best_model_on_test_set:
                 if (not self.cfg.var.is_parallel) or dist.get_rank() == 0:
                     self.logger_checkpoints.warn(f'Saving best model on test set: {mark} {epoch}')
-                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_best_test{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(),
+                               os.path.join(self.path_checkpoints, f'model_best_test{task_suffix}.pth'))
 
             if mode == 'val':
                 if getattr(self.cfg.exp.val, 'save_every_model', False):
                     self.logger_checkpoints.warn(f'Saving current model: {mark} {epoch}')
-                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_{mark}{epoch}{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(),
+                               os.path.join(self.path_checkpoints, f'model_{mark}{epoch}{task_suffix}.pth'))
                 elif self.is_best and getattr(self.cfg.exp.val, 'save_every_better_model', False):
                     self.logger_checkpoints.warn(f'Saving current model: {mark} {epoch}')
-                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_{mark}{epoch}{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(),
+                               os.path.join(self.path_checkpoints, f'model_{mark}{epoch}{task_suffix}.pth'))
                 if self.cfg.exp.val.save_latest_model:
                     self.logger_checkpoints.warn(f'Saving latest model: {mark} {epoch}')
-                    torch.save(self.model.state_dict(), os.path.join(self.path_checkpoints, f'model_latest{task_suffix}.pth'))
+                    torch.save(self.model.state_dict(),
+                               os.path.join(self.path_checkpoints, f'model_latest{task_suffix}.pth'))
 
     def test(self):
         self.model = self.model.to(self.device)
-        torch.cuda.empty_cache()
-        # 动态获取最新模型路径（优先使用验证集最佳模型）
-        try:
-            model_path = self.find_latest_model(task_name="mersam", model_type="best_val")
-            print(f"Auto-selected model: {model_path}")
-        except FileNotFoundError:
-            # 回退到配置文件中的路径（如果存在）
-            model_path = self.cfg.exp.test.path_model_trained
-            if model_path is None:
-                raise FileNotFoundError("No model path specified or auto-found!")
 
-        # 加载模型
-        state_dict = torch.load(model_path, map_location=self.device)
-        state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}  # 处理多卡训练前缀
-        self.model.load_state_dict(state_dict, strict=True)
+        if self.cfg.exp.test.path_model_trained is None:
+            # raise NotImplementedError('No model is loaded for test!')
+            print('Warning: no model is loaded')
+        else:
+            dict_state = torch.load(self.cfg.exp.test.path_model_trained, map_location=self.device)
+
+            for key in list(dict_state.keys()):
+                if key.startswith('module.'):
+                    dict_state[key[7:]] = dict_state.pop(key)
+            print(f'loading pretrained model for test from path {self.cfg.exp.test.path_model_trained}')
+            self.model.load_state_dict(dict_state, strict=True)
 
         if self.cfg.model.get('task_sequential', False):
             for task_idx in range(len(self.cfg.dataset.test_tasks)):
